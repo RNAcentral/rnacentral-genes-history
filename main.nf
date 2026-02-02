@@ -103,7 +103,7 @@ process convert_gff_to_parquet {
 process preprocess_transcripts {
     tag "Release ${meta.release}: ${meta.org_name} preprocessing"
     container 'oras://ghcr.io/rnacentral/rnacentral-import-pipeline:latest'
-    memory { 16.GB * task.attempt }
+    memory { 64.GB * task.attempt }
     errorStrategy { task.exitStatus in 137..140 ? 'retry' : 'ignore' }
     maxRetries 4
 
@@ -120,7 +120,6 @@ process preprocess_transcripts {
     --so_model_path ${so_model} \
     --regions_data ${regions_file} \
     --output ${meta.dirname}_features.parquet \
-    --no-parallel
     """
 
 }
@@ -128,7 +127,7 @@ process preprocess_transcripts {
 process classify_pairs {
     tag "Release ${meta.release}: ${meta.org_name} classification"
     container 'oras://ghcr.io/rnacentral/rnacentral-import-pipeline:latest'
-    memory { 16.GB * task.attempt }
+    memory { 64.GB * task.attempt }
     errorStrategy { task.exitStatus in 137..140 ? 'retry' : 'terminate' }
     maxRetries 4
     cpus 4
