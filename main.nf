@@ -170,36 +170,35 @@ process forward_merge {
     script:
     """
     # Create associative arrays for genes and inactive files by release
-    declare -A genes_files
-    declare -A inactive_files
+    declare -A genes_by_release
+    declare -A inactive_by_release
 
     # Parse genes files: genes_TAXID_RELEASE.json
     for file in ${genes_files}; do
         if [[ \$file =~ genes_${taxid}_([0-9]+)\\.json ]]; then
             release=\${BASH_REMATCH[1]}
-            genes_files[\$release]=\$file
+            genes_by_release[\$release]=\$file
         fi
     done
-    echo "\${genes_files[*]}"
+    echo "Found genes files for releases: \${!genes_by_release[*]}"
 
     # Parse inactive files: inactive_ids_release_RELEASE
     for file in ${inactive_files}; do
         if [[ \$file =~ inactive_ids_release_([0-9]+) ]]; then
             release=\${BASH_REMATCH[1]}
-            inactive_files[\$release]=\$file
+            inactive_by_release[\$release]=\$file
         fi
     done
-
-    echo "\${inactive_files[*]}"
+    echo "Found inactive files for releases: \${!inactive_by_release[*]}"
 
     # Hardcoded releases list (already sorted)
     releases=(12 13 14 15 16 17 18 19 20 21 22 23 24 25)
     echo "Processing releases in order: \${releases[*]}"
-    
+
     # Find the first available release for this taxon
     first_available_release=""
     for release in "\${releases[@]}"; do
-        if [[ -n "\${genes_files[\$release]:-}" && -n "\${inactive_files[\$release]:-}" ]]; then
+        if [[ -n "\${genes_by_release[\$release]:-}" && -n "\${inactive_by_release[\$release]:-}" ]]; then
             first_available_release=\$release
             echo "First available release for taxon ${taxid}: \$first_available_release"
             break
@@ -213,7 +212,7 @@ process forward_merge {
     fi
 
     # Start with the first available release
-    prev_file="\${genes_files[\$first_available_release]}"
+    prev_file="\${genes_by_release[\$first_available_release]}"
     prev_release="\$first_available_release"
 
     echo "Starting with release \$first_available_release"
@@ -225,18 +224,18 @@ process forward_merge {
             continue
         fi
         
-        curr_file="\${genes_files[\$release]}"
-        inactive_file="\${inactive_files[\$release]}"
+        curr_file="\${genes_by_release[\$release]:-}"
+        inactive_file="\${inactive_by_release[\$release]:-}"
         
         # Skip this release if files are missing
         if [[ -z "\$curr_file" || -z "\$inactive_file" ]]; then
-            echo "Skipping release \$release: missing genes_file='\$curr_file' or inactive_file='\$inactive_file'"
+            echo "Skipping release \$release: missing files (genes='\$curr_file', inactive='\$inactive_file')"
             continue
         fi
         
         output_file="\${release}_merged.json"
         
-        echo "Merging release \$prev_release + \$release"
+        echo "Merging release \$prev_release -> \$release (gap of \$((release - prev_release)) releases)"
         echo "  Previous: \$prev_file"
         echo "  Current: \$curr_file"
         echo "  Inactive: \$inactive_file"
@@ -257,6 +256,7 @@ process forward_merge {
 
     # Copy final result to expected output name
     cp "\$prev_file" "final_merged_${taxid}.json"
+    echo "Final merged file covers releases \$first_available_release -> \$prev_release"
     """
 }
 
