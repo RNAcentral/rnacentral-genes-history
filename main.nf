@@ -254,6 +254,18 @@ process forward_merge {
         prev_release=\$release
     done
 
+    # Check if we never actually merged anything (only one release found)
+    if [[ "\$prev_file" == "\${genes_by_release[\$first_available_release]}" ]]; then
+        echo "Only one release found (\$first_available_release), initialising version data"
+        rnac genes utils init \\
+            --genes "\$prev_file" \\
+            --output "final_merged_${taxid}.json" \\
+            --release_number \$first_available_release
+    else
+        cp "\$prev_file" "final_merged_${taxid}.json"
+    fi
+    echo "Final output: final_merged_${taxid}.json"
+
     # Copy final result to expected output name
     cp "\$prev_file" "final_merged_${taxid}.json"
     echo "Final merged file covers releases \$first_available_release -> \$prev_release"
