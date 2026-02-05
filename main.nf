@@ -265,10 +265,6 @@ process forward_merge {
         cp "\$prev_file" "final_merged_${taxid}.json"
     fi
     echo "Final output: final_merged_${taxid}.json"
-
-    # Copy final result to expected output name
-    cp "\$prev_file" "final_merged_${taxid}.json"
-    echo "Final merged file covers releases \$first_available_release -> \$prev_release"
     """
 }
 
