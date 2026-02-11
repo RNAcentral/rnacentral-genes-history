@@ -46,7 +46,7 @@ process get_organism_paths {
 process fetch_inactive_ids {
     tag "${release}: inactive ids copy"
     queue 'datamover'
-    memory { 4.GB * task.attempt }
+    memory { 8.GB * task.attempt }
     errorStrategy { task.exitStatus in 137..140 ? 'retry' : 'terminate' }
 
     input:
@@ -103,9 +103,11 @@ process convert_gff_to_parquet {
 process preprocess_transcripts {
     tag "Release ${meta.release}: ${meta.org_name} preprocessing"
     container 'oras://ghcr.io/rnacentral/rnacentral-import-pipeline:latest'
-    memory { 64.GB * task.attempt }
+    memory { 128.GB * task.attempt }
     errorStrategy { task.exitStatus in 137..140 ? 'retry' : 'ignore' }
     maxRetries 4
+    cpus 8
+    time '4d'
 
     input:
         tuple val(meta), path(input_parquet), path(regions_file),  path(so_model)
@@ -130,7 +132,7 @@ process classify_pairs {
     memory { 64.GB * task.attempt }
     errorStrategy { task.exitStatus in 137..140 ? 'retry' : 'terminate' }
     maxRetries 4
-    cpus 4
+    cpus 8
 
 
     input:
@@ -157,7 +159,7 @@ process classify_pairs {
 process forward_merge {
     container 'oras://ghcr.io/rnacentral/rnacentral-import-pipeline:latest'
     tag "Forward_merge ${taxid}"
-    memory { 4.GB * task.attempt }
+    memory { 8.GB * task.attempt }
     errorStrategy { task.exitStatus in 137..140 ? 'retry' : 'ignore' }
     cpus 4
 
@@ -293,6 +295,7 @@ process upload_genes {
     container 'oras://ghcr.io/rnacentral/rnacentral-import-pipeline:latest'
     tag "${taxid} gene upload"
     maxForks 1
+    memory '32GB'
 
     input:
         tuple val(taxid), path(merged_genes)
