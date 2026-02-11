@@ -369,7 +369,7 @@ workflow {
     inactive_ids = releases.map { release -> [release, []] }  // Convert to [release, dummy] structure
     | fetch_inactive_ids
 
-    gff_files = combo | copy_gff
+    gff_files = combo | copy_gff | transpose()
     gff_with_regions = gff_files
         .map { meta, gff_file -> [meta.taxid, meta, gff_file] }
         .combine(regions_data, by: 0)
