@@ -27,6 +27,17 @@ process fetch_regions_data {
     """
 }
 
+process fetch_assembly_info {
+    input:
+        path(assembly_query)
+    output:
+        path('assemblies.csv')
+    script:
+    """
+    psql -v ON_ERROR_STOP=1 -f ${assembly_query} "\$PGDATABASE" > assemblies.csv
+    """
+}
+
 process get_organism_paths {
 
     container 'oras://ghcr.io/rnacentral/rnacentral-import-pipeline:latest'
