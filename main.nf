@@ -20,10 +20,10 @@ process fetch_regions_data {
     input:
         tuple val(taxid), path(regions_query)
     output:
-        tuple val(taxid), path('regions.csv')
+        tuple val(taxid), path('regions.json')
     script:
     """
-    psql -v ON_ERROR_STOP=1 -v taxid=${taxid} -f ${regions_query} "$PGDATABASE" > regions.csv
+    psql -v ON_ERROR_STOP=1 -v taxid=${taxid} -f ${regions_query} "$PGDATABASE" > regions.json
     """
 }
 
@@ -77,8 +77,8 @@ process copy_gff {
 
     script:
     """
-    cp /nfs/ftp/public/databases/RNAcentral/releases/${meta.release}.0/genome_coordinates/gff3/${meta.dirname}.*.gff3.gz .
-    gzip -d ${meta.dirname}.*.gff3.gz
+    cp /nfs/ftp/public/databases/RNAcentral/releases/${meta.release}.0/genome_coordinates/gff3/${meta.ensembl_url}.${meta.assembly}.gff3.gz .
+    gzip -d ${meta.ensembl_url}.${meta.assembly}.gff3.gz
     """
 }
 
@@ -143,7 +143,7 @@ process classify_pairs {
 
     script:
     """
-    export OMP_NUM_THREADS=4
+    export OMP_NUM_THREADS=8
 
     rnac genes infer classify \
     --transcripts_file ${transcripts} \
@@ -330,6 +330,7 @@ process upload_metadata {
 workflow {
     taxa_query = Channel.fromPath('/hps/nobackup/agb/rnacentral/rnacentral-genes-history/sql/get_taxids.sql')
     release_file = Channel.fromPath('/hps/nobackup/agb/rnacentral/rnacentral-genes-history/releases.txt')
+    assembly_query = Channel.fromPath('/hps/nobackup/agb/rnacentral/rnacentral-genes-history/sql/get_assembly_info.sql')
     so_model = Channel.fromPath('/hps/nobackup/agb/rnacentral/rnacentral-genes-history/so_model.emb')
     rf_model = Channel.fromPath('/hps/nobackup/agb/rnacentral/rnacentral-genes-history/rf_model.onnx')
     org_name_script = Channel.fromPath("/hps/nobackup/agb/rnacentral/rnacentral-genes-history/utils/organism_name.py")
@@ -349,21 +350,25 @@ workflow {
         .map { taxid, query_file -> [taxid, query_file] }
         | fetch_regions_data
 
+    assembly_info = assembly_query | fetch_assembly_info
+    | splitCsv(header: true)
+    | map { row -> [row.taxid, row.assembly_id, row.ensembl_url] }
 
-    combo = taxid_name_dirname.combine(releases).map { taxid, org_name, dirname, release ->
-            // Create a meta map containing ALL the metadata we want to track
-            def meta = [
-                taxid: taxid,
-                org_name: org_name, 
-                dirname: dirname,
-                release: release,
-                sample_id: "${org_name}_rel${release}"  // Computed field
-            ]
-            
-            // Return tuple of [meta, files]
-            // The empty list [] is for initial files (none in this case)
-            [meta, []]
-        }
+    combo = taxid_name_dirname
+    .combine(assembly_info, by: 0)
+    .combine(releases)
+    .map { taxid, org_name, dirname, assembly_id, ensembl_url, release ->
+        def meta = [
+            taxid: taxid,
+            org_name: org_name,
+            dirname: dirname,
+            assembly: assembly_id,
+            ensembl_url: ensembl_url,
+            release: release,
+            sample_id: "${org_name}_${assembly_id}_rel${release}"
+        ]
+        [meta, []]
+    }
 
     meta_by_release = combo
         .map { meta, dummy -> [meta.release, meta] }
