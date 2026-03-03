@@ -163,22 +163,22 @@ process classify_pairs {
     --output_dir . \
     --model_path ${rf_model}
 
-    mv genes_${meta.taxid}.json genes_${meta.taxid}_${meta.release}.json
+    mv genes_${meta.taxid}.json genes_${meta.taxid}_${meta.assembly}_${meta.release}.json
     """
 }
 
 process forward_merge {
     container 'oras://ghcr.io/rnacentral/rnacentral-import-pipeline:latest'
-    tag "Forward_merge ${taxid}"
+    tag "Forward_merge ${taxid} ${assembly}"
     memory { 8.GB * task.attempt }
     errorStrategy { task.exitStatus in 137..140 ? 'retry' : 'ignore' }
     cpus 4
 
     input:
-        tuple val(taxid), path(genes_files), path(inactive_files)
+        tuple val(taxid), val(assembly), path(genes_files), path(inactive_files)
 
     output:
-        tuple val(taxid), path("final_merged_${taxid}.json")
+        tuple val(taxid), val(assembly), path("final_merged_${taxid}_${assembly}.json")
 
     script:
     """
@@ -186,9 +186,9 @@ process forward_merge {
     declare -A genes_by_release
     declare -A inactive_by_release
 
-    # Parse genes files: genes_TAXID_RELEASE.json
+    # Parse genes files: genes_TAXID_ASSEMBLY_RELEASE.json
     for file in ${genes_files}; do
-        if [[ \$file =~ genes_${taxid}_([0-9]+)\\.json ]]; then
+        if [[ \$file =~ genes_${taxid}_${assembly}_([0-9]+)\\.json ]]; then
             release=\${BASH_REMATCH[1]}
             genes_by_release[\$release]=\$file
         fi
@@ -272,29 +272,29 @@ process forward_merge {
         echo "Only one release found (\$first_available_release), initialising version data"
         rnac genes utils init \\
             --genes "\$prev_file" \\
-            --output "final_merged_${taxid}.json" \\
+            --output "final_merged_${taxid}_${assembly}.json" \\
             --release_number \$first_available_release
     else
-        cp "\$prev_file" "final_merged_${taxid}.json"
+        cp "\$prev_file" "final_merged_${taxid}_${assembly}.json"
     fi
-    echo "Final output: final_merged_${taxid}.json"
+    echo "Final output: final_merged_${taxid}_${assembly}.json"
     """
 }
 
 
 process calculate_metadata {
     container 'oras://ghcr.io/rnacentral/rnacentral-import-pipeline:latest'
-    tag "${taxid} metadata calculation"
+    tag "${taxid} ${assembly} metadata calculation"
     memory { 4.GB * task.attempt }
     errorStrategy { task.exitStatus in 137..140 ? 'retry' : 'ignore' }
     cpus 4
     maxForks 1
 
     input:
-        tuple val(taxid), path(merged_genes)
+        tuple val(taxid), val(assembly), path(merged_genes)
 
     output:
-        tuple val(taxid), path("${taxid}_metadata.json")
+        tuple val(taxid), val(assembly), path("${taxid}_${assembly}_metadata.json")
 
     script:
     """
@@ -304,15 +304,15 @@ process calculate_metadata {
 
 process upload_genes {
     container 'oras://ghcr.io/rnacentral/rnacentral-import-pipeline:latest'
-    tag "${taxid} gene upload"
+    tag "${taxid} ${assembly} gene upload"
     maxForks 1
     memory '32GB'
 
     input:
-        tuple val(taxid), path(merged_genes)
+        tuple val(taxid), val(assembly), path(merged_genes)
 
     output:
-        tuple val(taxid), path(merged_genes)
+        tuple val(taxid), val(assembly), path(merged_genes)
 
     script:
     """
@@ -322,14 +322,14 @@ process upload_genes {
 
 process upload_metadata {
     container 'oras://ghcr.io/rnacentral/rnacentral-import-pipeline:latest'
-    tag "${taxid} metadata upload"
+    tag "${taxid} ${assembly} metadata upload"
     maxForks 1
 
     input:
-        tuple val(taxid), path(metadata)
+        tuple val(taxid), val(assembly), path(metadata)
 
     output:
-        tuple val(taxid), val("DONE METADATA")
+        tuple val(taxid), val(assembly), val("DONE METADATA")
 
     script:
     """
@@ -401,10 +401,10 @@ workflow {
     genes = classify_pairs(transcripts_with_regions.join(features).combine(rf_model))
     
     genes_collected = genes
-        .map { meta, json_file -> 
-            [meta.taxid, json_file]
+        .map { meta, json_file ->
+            [meta.taxid, meta.assembly, json_file]
         }
-        .groupTuple()
+        .groupTuple(by: [0, 1])
     
     inactive_with_meta = inactive_ids
     .join(meta_by_release)  // Join on release number
@@ -415,13 +415,13 @@ workflow {
 
 
     inactive_collected = inactive_with_meta
-        .map { meta, inactive_file -> [meta.taxid, inactive_file] }
-        .groupTuple()
+        .map { meta, inactive_file -> [meta.taxid, meta.assembly, inactive_file] }
+        .groupTuple(by: [0, 1])
 
     combined_for_merge = genes_collected
-        .join(inactive_collected)
-        .map { taxid, genes_files_list, inactive_files_list ->
-            [taxid, genes_files_list.flatten(), inactive_files_list.flatten()]
+        .join(inactive_collected, by: [0, 1])
+        .map { taxid, assembly, genes_files_list, inactive_files_list ->
+            [taxid, assembly, genes_files_list.flatten(), inactive_files_list.flatten()]
         }
 
     merged_genes = combined_for_merge | forward_merge
